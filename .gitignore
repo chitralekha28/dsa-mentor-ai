@@ -1,0 +1,17 @@
+# Node
+node_modules/
+frontend/node_modules/
+
+# Python
+venv/
+backend/venv/
+__pycache__/
+
+# Environment
+.env
+
+# Build
+frontend/build/
+
+# OS
+.DS_Store
