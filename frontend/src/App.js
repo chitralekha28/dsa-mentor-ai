@@ -3,7 +3,7 @@ import Home from "./pages/Home";
 import Companies from "./pages/Companies";
 import CompanyProblems from "./pages/CompanyProblems";
 import ProblemDetail from "./pages/ProblemDetail";
-
+import CodeEditor from "./CodeEditor";
 
 function App() {
   return (
