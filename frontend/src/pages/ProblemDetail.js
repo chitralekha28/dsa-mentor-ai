@@ -1,244 +1,305 @@
-import { useParams } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import Editor from "@monaco-editor/react";
-import { useRef } from "react";
+import { getProblemProgress, markAttempted, markSolved } from "../utils/progress";
 
-const boilerplate = {
-  python: `def twoSum(nums, target):
-    seen = {}
-    for i, num in enumerate(nums):
-        diff = target - num
-        if diff in seen:
-            return [seen[diff], i]
-        seen[num] = i`,
-  cpp: `class Solution {
-public:
-    vector<int> twoSum(vector<int>& nums, int target) {
-        unordered_map<int,int> mp;
-        for(int i=0;i<nums.size();i++){
-            int diff = target - nums[i];
-            if(mp.count(diff)) return {mp[diff], i};
-            mp[nums[i]] = i;
-        }
-        return {};
-    }
-};`,
-  java: `class Solution {
-    public int[] twoSum(int[] nums, int target) {
-        HashMap<Integer,Integer> map = new HashMap<>();
-        for(int i=0;i<nums.length;i++){
-            int diff = target - nums[i];
-            if(map.containsKey(diff)){
-                return new int[]{map.get(diff), i};
-            }
-            map.put(nums[i], i);
-        }
-        return new int[]{};
-    }
-}`,
-  javascript: `var twoSum = function(nums, target) {
-    const map = {};
-    for(let i=0;i<nums.length;i++){
-        let diff = target - nums[i];
-        if(map[diff] !== undefined) return [map[diff], i];
-        map[nums[i]] = i;
-    }
-};`
+const API_BASE = "http://127.0.0.1:5000/api";
+
+const fallbackStarterCode = {
+  python: "def solve():\n    pass",
+  cpp: "void solve() {\n    \n}",
+  java: "class Solution {\n    \n}",
+  javascript: "function solve() {\n  \n}",
 };
 
+const difficultyClass = (difficulty = "") => difficulty.toLowerCase();
+
 export default function ProblemDetail() {
-  const { company, problemId } = useParams();
- 
-  const [problem, setProblem] = useState(null);
-  const [language, setLanguage] = useState("python");
-  const [code, setCode] = useState(boilerplate["python"]);
-  const [output, setOutput] = useState("");
-  const [canSubmit, setCanSubmit] = useState(false);
-  const [submitResult, setSubmitResult] = useState("");
-  const [aiFeedback, setAiFeedback] = useState("");
-  const [loadingAI, setLoadingAI] = useState(false);
+  const { company, problemId, id } = useParams();
+  const navigate = useNavigate();
+  const resolvedProblemId = problemId || id;
   const editorRef = useRef(null);
 
-  useEffect(() => {
-    fetch(`http://127.0.0.1:5000/api/problem/${company}/${problemId}`)
-      .then((res) => res.json())
-      .then(setProblem);
-  }, [company, problemId]);
+  const [problem, setProblem] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [language, setLanguage] = useState("python");
+  const [code, setCode] = useState("");
+  const [output, setOutput] = useState("");
+  const [outputStatus, setOutputStatus] = useState("");
+  const [canSubmit, setCanSubmit] = useState(false);
+  const [submitResult, setSubmitResult] = useState("");
+  const [submitStatus, setSubmitStatus] = useState("");
+  const [aiFeedback, setAiFeedback] = useState("");
+  const [loadingAI, setLoadingAI] = useState(false);
+  const [progressStatus, setProgressStatus] = useState("");
+
+  const starterCode = useMemo(
+    () => problem?.starterCode || fallbackStarterCode,
+    [problem]
+  );
 
   useEffect(() => {
-    setCode(boilerplate[language]);
+    const controller = new AbortController();
+    const url = company
+      ? `${API_BASE}/problems/${company}/${resolvedProblemId}`
+      : `${API_BASE}/problems/${resolvedProblemId}`;
+
+    setLoading(true);
+    setLoadError("");
+
+    fetch(url, { signal: controller.signal })
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error("Problem not found");
+        }
+        return res.json();
+      })
+      .then((data) => setProblem(data))
+      .catch((error) => {
+        if (error.name !== "AbortError") {
+          setLoadError(error.message);
+          setProblem(null);
+        }
+      })
+      .finally(() => setLoading(false));
+
+    return () => controller.abort();
+  }, [company, resolvedProblemId]);
+
+  useEffect(() => {
+    if (problem?.id) {
+      setProgressStatus(getProblemProgress(problem.id).status || "");
+    }
+  }, [problem]);
+
+  useEffect(() => {
+    setCode(starterCode[language] || fallbackStarterCode[language]);
+    setOutput("");
+    setOutputStatus("");
     setCanSubmit(false);
     setSubmitResult("");
+    setSubmitStatus("");
     setAiFeedback("");
-  }, [language]);
+  }, [language, starterCode]);
 
-  // RUN
   const runCode = async () => {
-    setOutput("Running...");
+    setOutput("Running tests...");
+    setOutputStatus("");
     setCanSubmit(false);
+    setSubmitResult("");
+    setSubmitStatus("");
+    markAttempted(problem, language);
+    setProgressStatus((current) => current || "attempted");
 
-    const res = await fetch("http://127.0.0.1:5000/api/run", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-     body: JSON.stringify({ code, language }),
+    try {
+      const res = await fetch(`${API_BASE}/problems/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code,
+          language,
+          company,
+          problemId: problem.id,
+        }),
+      });
+      const data = await res.json();
 
-    });
+      if (data.status === "success") {
+        setOutput(`All test cases passed.\nRuntime: ${data.runtime}`);
+        setOutputStatus("success");
+        setCanSubmit(true);
+        return;
+      }
 
-    const data = await res.json();
-
-    if (data.status === "success") {
-      setOutput("✅ All test cases passed");
-      setCanSubmit(true);
-    } else if (data.status === "failed") {
-      setOutput(`❌ ${data.message}`);
-    } else {
-      setOutput(`⚠️ ${data.message}`);
+      setOutput(data.message || "Code did not pass the test cases.");
+      setOutputStatus("error");
+    } catch (error) {
+      setOutput(`Run failed: ${error.message}`);
+      setOutputStatus("error");
     }
   };
 
-  // SUBMIT + AI REVIEW
-  const handleSubmit = async () => {
+  const submitCode = async () => {
     setSubmitResult("Submitting...");
+    setSubmitStatus("");
     setAiFeedback("");
 
-    const res = await fetch("http://127.0.0.1:5000/api/submit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code, language }),
-    });
+    try {
+      const res = await fetch(`${API_BASE}/problems/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code,
+          language,
+          company,
+          problemId: problem.id,
+        }),
+      });
+      const data = await res.json();
 
-    const data = await res.json();
+      if (data.status !== "accepted") {
+        setSubmitResult(data.message || "Wrong answer");
+        setSubmitStatus("error");
+        return;
+      }
 
-    if (data.status === "accepted") {
-      setSubmitResult(`🎉 Accepted\nRuntime: ${data.runtime}`);
+      setSubmitResult(`Accepted\nRuntime: ${data.runtime}`);
+      setSubmitStatus("success");
+      markSolved(problem, language, data.runtime);
+      setProgressStatus("solved");
       setLoadingAI(true);
 
-      // AI REVIEW
-      const aiRes = await fetch("http://localhost:5000/api/ai-review", {
+      const aiRes = await fetch(`${API_BASE}/ai-review`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           code,
           language,
           problem: problem.title,
-          company: company,
+          company: problem.company || company,
           result: "accepted",
         }),
       });
-
       const aiData = await aiRes.json();
-      setAiFeedback(aiData.review);
+      setAiFeedback(aiData.review || "AI review is unavailable right now.");
+    } catch (error) {
+      setSubmitResult(`Submit failed: ${error.message}`);
+      setSubmitStatus("error");
+    } finally {
       setLoadingAI(false);
-    } else {
-      setSubmitResult("❌ Wrong Answer");
     }
   };
 
-  if (!problem) return <p>Loading...</p>;
+  if (loading) return <div className="loading-state">Loading problem...</div>;
+  if (loadError) return <div className="empty-state">{loadError}</div>;
+  if (!problem) return <div className="empty-state">Problem unavailable.</div>;
 
   return (
-    <div style={{ display: "flex", height: "100vh" }}>
-     <div style={{ width: "45%", padding: "20px", overflowY: "auto" }}>
-  <h2>{problem.title}</h2>
-  <span style={{ color: "#22c55e", fontWeight: "bold" }}>
-    {problem.difficulty}
-  </span>
+    <main className="problem-workspace">
+      <section className="problem-pane">
+        <div className="meta-row">
+          <button
+            className="btn"
+            onClick={() => navigate(company ? `/companies/${company}` : "/companies")}
+          >
+            Back
+          </button>
+          <span className={`badge ${difficultyClass(problem.difficulty)}`}>
+            {problem.difficulty}
+          </span>
+          {problem.company && <span className="tag">{problem.company}</span>}
+          {progressStatus && (
+            <span className={`badge status-${progressStatus}`}>{progressStatus}</span>
+          )}
+        </div>
 
-  <h4 style={{ marginTop: "15px" }}>Problem</h4>
-  <p>{problem.problemStatement}</p>
+        <h1 className="problem-title">{problem.title}</h1>
 
-  <h4>Input Format</h4>
-  <p>{problem.inputFormat}</p>
+        <div className="tags">
+          {problem.tags?.map((tag) => (
+            <span className="tag" key={tag}>{tag}</span>
+          ))}
+        </div>
 
-  <h4>Output Format</h4>
-  <p>{problem.outputFormat}</p>
+        <section className="content-section">
+          <h4>Problem</h4>
+          <p>{problem.problemStatement || problem.description}</p>
+        </section>
 
-  <h4>Examples</h4>
-  {problem.examples.map((ex, i) => (
-    <div
-      key={i}
-      style={{
-        background: "#f1f5f9",
-        padding: "10px",
-        borderRadius: "6px",
-        marginBottom: "10px",
-      }}
-    >
-      <p><strong>Input:</strong> {ex.input}</p>
-      <p><strong>Output:</strong> {ex.output}</p>
-      <p><strong>Explanation:</strong> {ex.explanation}</p>
-    </div>
-  ))}
+        <section className="content-section">
+          <h4>Input Format</h4>
+          <p>{problem.inputFormat}</p>
+        </section>
 
-  <h4>Sample Test Cases</h4>
-  {problem.visibleTestCases.map((tc, i) => (
-    <div
-      key={i}
-      style={{
-        background: "#e2e8f0",
-        padding: "10px",
-        marginBottom: "10px",
-        borderRadius: "6px",
-      }}
-    >
-      <p><strong>Input:</strong> {tc.input}</p>
-      <p><strong>Output:</strong> {tc.output}</p>
-    </div>
-  ))}
+        <section className="content-section">
+          <h4>Output Format</h4>
+          <p>{problem.outputFormat}</p>
+        </section>
 
-  <h4>Constraints</h4>
-  <ul>
-    {problem.constraints.map((c, i) => (
-      <li key={i}>{c}</li>
-    ))}
-  </ul>
-</div>
+        <section className="content-section">
+          <h4>Examples</h4>
+          {problem.examples?.map((example, index) => (
+            <div className="example-box" key={`${example.input}-${index}`}>
+              <p><strong>Input:</strong> {example.input}</p>
+              <p><strong>Output:</strong> {example.output}</p>
+              {example.explanation && (
+                <p><strong>Explanation:</strong> {example.explanation}</p>
+              )}
+            </div>
+          ))}
+        </section>
 
+        <section className="content-section">
+          <h4>Sample Test Cases</h4>
+          {problem.visibleTestCases?.map((testCase, index) => (
+            <div className="example-box" key={`${testCase.input}-${index}`}>
+              <p><strong>Input:</strong> {testCase.input}</p>
+              <p><strong>Output:</strong> {testCase.output}</p>
+            </div>
+          ))}
+        </section>
 
-      <div style={{ width: "55%", padding: "20px" }}>
-        <select value={language} onChange={(e) => setLanguage(e.target.value)}>
-          <option value="python">Python</option>
-          <option value="cpp">C++</option>
-          <option value="java">Java</option>
-          <option value="javascript">JavaScript</option>
-        </select>
+        <section className="content-section">
+          <h4>Constraints</h4>
+          <ul>
+            {problem.constraints?.map((constraint) => (
+              <li key={constraint}>{constraint}</li>
+            ))}
+          </ul>
+        </section>
+      </section>
 
-       <Editor
-  height="60vh"
-  language={language === "cpp" ? "cpp" : language}
-  theme="vs-dark"
-  value={code}
-  onChange={(value) => setCode(value || "")}
-  options={{
-    minimap: { enabled: false },
-    scrollBeyondLastLine: false,
-    fontSize: 14,
-    wordWrap: "on",
-    automaticLayout: true,
-  }}
-  onMount={(editor) => {
-    editorRef.current = editor;
-  }}
-/>
+      <section className="editor-pane">
+        <div className="editor-toolbar">
+          <label htmlFor="language">Language</label>
+          <select
+            className="language-select"
+            id="language"
+            value={language}
+            onChange={(e) => setLanguage(e.target.value)}
+          >
+            <option value="python">Python</option>
+            <option value="cpp">C++</option>
+            <option value="java">Java</option>
+            <option value="javascript">JavaScript</option>
+          </select>
+        </div>
 
+        <div className="editor-frame">
+          <Editor
+            height="100%"
+            language={language === "cpp" ? "cpp" : language}
+            onChange={(value) => setCode(value || "")}
+            onMount={(editor) => {
+              editorRef.current = editor;
+            }}
+            options={{
+              automaticLayout: true,
+              fontSize: 14,
+              minimap: { enabled: false },
+              scrollBeyondLastLine: false,
+              wordWrap: "on",
+            }}
+            theme="vs-dark"
+            value={code}
+          />
+        </div>
 
-        <button onClick={runCode}>Run</button>
-        <button disabled={!canSubmit} onClick={handleSubmit}>
-          Submit
-        </button>
+        <div className="editor-actions">
+          <button className="btn" onClick={runCode}>Run</button>
+          <button className="btn primary" disabled={!canSubmit} onClick={submitCode}>
+            Submit
+          </button>
+        </div>
 
-        <pre>{output}</pre>
-        <pre>{submitResult}</pre>
-
-        {loadingAI && <p>🤖 AI is reviewing...</p>}
-
-        {aiFeedback && (
-          <pre style={{ background: "#020617", color: "white" }}>
-            {aiFeedback}
-          </pre>
+        {output && <pre className={`console ${outputStatus}`}>{output}</pre>}
+        {submitResult && (
+          <pre className={`console ${submitStatus}`}>{submitResult}</pre>
         )}
-      </div>
-    </div>
+        {loadingAI && <pre className="console">AI is reviewing...</pre>}
+        {aiFeedback && <pre className="console">{aiFeedback}</pre>}
+      </section>
+    </main>
   );
 }
-

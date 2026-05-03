@@ -1,73 +1,94 @@
-import { useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+import { getProgress } from "../utils/progress";
 
+const difficultyClass = (difficulty = "") => difficulty.toLowerCase();
 
-const CompanyProblems = () => {
+export default function CompanyProblems() {
   const { company } = useParams();
-  const [problems, setProblems] = useState([]);
-  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
+  const [problems, setProblems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [progress, setProgress] = useState(getProgress());
+
   useEffect(() => {
-    fetch(`http://127.0.0.1:5000/api/problems/${company}`)
+    setLoading(true);
+    fetch(`http://localhost:5000/api/problems?company=${company}`)
       .then((res) => res.json())
       .then((data) => {
-        setProblems(data);
-        setLoading(false);
+        setProblems(Array.isArray(data) ? data : []);
       })
-      .catch((err) => {
-        console.error(err);
-        setLoading(false);
-      });
+      .catch(() => {
+        setProblems([]);
+      })
+      .finally(() => setLoading(false));
   }, [company]);
 
-  if (loading) return <p style={{ padding: "40px" }}>Loading problems...</p>;
+  useEffect(() => {
+    const refresh = () => setProgress(getProgress());
+
+    window.addEventListener("storage", refresh);
+    window.addEventListener("progress-updated", refresh);
+
+    return () => {
+      window.removeEventListener("storage", refresh);
+      window.removeEventListener("progress-updated", refresh);
+    };
+  }, []);
+
+  const companyName = company.charAt(0).toUpperCase() + company.slice(1);
 
   return (
-    <div style={{ padding: "40px" }}>
-      <h1 style={{ textTransform: "capitalize" }}>
-        {company} DSA Problems
-      </h1>
+    <main className="page">
+      <div className="section-head">
+        <div>
+          <span className="tag">{companyName}</span>
+          <h1>{companyName} Problems</h1>
+          <p>Open a problem, write your solution, run tests, then submit.</p>
+        </div>
+        <button className="btn" onClick={() => navigate("/companies")}>
+          Back to Companies
+        </button>
+      </div>
 
-      {problems.length === 0 ? (
-        <p>No problems found for this company.</p>
+      {loading ? (
+        <div className="loading-state">Loading problems...</div>
+      ) : problems.length === 0 ? (
+        <div className="empty-state">
+          No problems are available for this company yet.
+        </div>
       ) : (
-        <ul style={{ marginTop: "30px" }}>
+        <div className="problem-list">
           {problems.map((problem) => (
-            <li
+            <article
+              className={`problem-card ${progress[problem.id]?.status || ""}`}
               key={problem.id}
-              onClick={() =>
-    navigate(`/companies/${company}/problem/${problem.id}`)
-  }
-              style={{
-                border: "1px solid #ccc",
-                padding: "15px",
-                borderRadius: "8px",
-                marginBottom: "15px",
-                listStyle: "none",
-              }}
+              onClick={() => navigate(`/companies/${company}/problem/${problem.id}`)}
             >
-              <h3>{problem.title}</h3>
-              <span
-                style={{
-                  fontWeight: "bold",
-                  color:
-                    problem.difficulty === "Easy"
-                      ? "green"
-                      : problem.difficulty === "Medium"
-                      ? "orange"
-                      : "red",
-                }}
-              >
-                {problem.difficulty}
-              </span>
-            </li>
+              <div>
+                <h3>{problem.title}</h3>
+                <p>{problem.description}</p>
+                <div className="tags">
+                  {problem.tags?.map((tag) => (
+                    <span className="tag" key={tag}>{tag}</span>
+                  ))}
+                </div>
+              </div>
+              <div className="card-status">
+                {progress[problem.id]?.status && (
+                  <span className={`badge status-${progress[problem.id].status}`}>
+                    {progress[problem.id].status}
+                  </span>
+                )}
+                <span className={`badge ${difficultyClass(problem.difficulty)}`}>
+                  {problem.difficulty}
+                </span>
+              </div>
+            </article>
           ))}
-        </ul>
+        </div>
       )}
-    </div>
+    </main>
   );
-};
-
-export default CompanyProblems;
+}

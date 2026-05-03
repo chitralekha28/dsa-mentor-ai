@@ -5,7 +5,19 @@ frontend/node_modules/
 # Python
 venv/
 backend/venv/
+backend/app/venv/
 __pycache__/
+backend/__pycache__/
+backend/data/__pycache__/
+backend/routes/__pycache__/
+
+# Local judge artifacts
+backend/Solution.java
+backend/*.class
+backend/*.exe
+backend/*.out
+backend/*.log
+frontend/*.log
 
 # Environment
 .env

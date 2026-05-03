@@ -1,34 +1,53 @@
 import { useNavigate } from "react-router-dom";
 
 const Home = () => {
-  const navigate = useNavigate();   // ✅ ADD THIS LINE
+  const navigate = useNavigate();
 
   return (
-    <div style={{ padding: "60px", textAlign: "center" }}>
-      <h1 style={{ fontSize: "48px" }}>DSA Mentor AI 🚀</h1>
+    <main className="page hero">
+      <section className="hero-copy">
+        <span className="tag">Company-wise DSA practice</span>
+        <h1>DSA Mentor AI</h1>
+        <p>
+          Practice focused interview problems, run code against hidden tests,
+          and get a guided review after acceptance.
+        </p>
 
-      <p style={{ fontSize: "18px", marginTop: "20px" }}>
-        Your personal AI mentor for company-wise DSA preparation
-      </p>
+        <div className="hero-actions">
+          <button className="btn primary" onClick={() => navigate("/companies")}>
+            Start Preparing
+          </button>
+          <button className="btn" onClick={() => navigate("/companies/amazon")}>
+            Try Amazon Set
+          </button>
+          <button className="btn" onClick={() => navigate("/dashboard")}>
+            View Dashboard
+          </button>
+        </div>
+      </section>
 
-      <div style={{ marginTop: "40px" }}>
-        <button
-          style={{ padding: "12px 24px", fontSize: "16px" }}
-          onClick={() => navigate("/companies")}   // ✅ ADD THIS
-        >
-          Start Preparing
-        </button>
-      </div>
-
-      <div style={{ marginTop: "50px" }}>
-        <h3>Why DSA Mentor AI?</h3>
-        <ul style={{ listStyle: "none", padding: 0 }}>
-          <li>✅ Company-specific DSA questions</li>
-          <li>✅ AI-powered hints & explanations</li>
-          <li>✅ Personalized preparation roadmap</li>
-        </ul>
-      </div>
-    </div>
+      <section className="hero-panel" aria-label="Platform preview">
+        <div className="terminal-head">
+          <span className="dot red" />
+          <span className="dot yellow" />
+          <span className="dot green" />
+        </div>
+        <div className="terminal-body">
+          <div className="terminal-row">
+            <span>Problems</span>
+            <strong>Company curated</strong>
+          </div>
+          <div className="terminal-row">
+            <span>Judge</span>
+            <strong>Python, JS, C++, Java</strong>
+          </div>
+          <div className="terminal-row">
+            <span>Workflow</span>
+            <strong>Run, submit, review</strong>
+          </div>
+        </div>
+      </section>
+    </main>
   );
 };
 
